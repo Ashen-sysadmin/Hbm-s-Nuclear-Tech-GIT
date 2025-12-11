@@ -191,6 +191,7 @@ public class Fluids {
 	public static FluidType ALUMINA;
 	public static FluidType CONCRETE;
 	public static FluidType DHC;
+	public static FluidType SALTWATER;
 
 	/* Lagacy names for compatibility purposes */
 	@Deprecated public static FluidType ACID;	//JAOPCA uses this, apparently
@@ -409,7 +410,7 @@ public class Fluids {
 		AIR =					new FluidType("AIR",				0xE7EAEB, 0, 0, 0, EnumSymbol.NONE).addTraits(GASEOUS);
 		CONCRETE =				new FluidType("CONCRETE",			0xA2A2A2, 0, 0, 0, EnumSymbol.NONE).addTraits(LIQUID);
 		DHC =					new FluidType(153, "DHC",			0xD2AFFF, 0, 0, 0, EnumSymbol.NONE).addTraits(GASEOUS);
-
+		SALTWATER =				new FluidType("SALTWATER",		0x6e6eff, 0, 0, 0, EnumSymbol.NONE).addTraits(LIQUID);
 		// ^ ^ ^ ^ ^ ^ ^ ^
 		//ADD NEW FLUIDS HERE
 
@@ -428,6 +429,7 @@ public class Fluids {
 		metaOrder.add(WATER);
 		metaOrder.add(HEAVYWATER);
 		metaOrder.add(HEAVYWATER_HOT);
+		metaOrder.add(SALTWATER);
 		metaOrder.add(LAVA);
 		//steams
 		metaOrder.add(STEAM);
