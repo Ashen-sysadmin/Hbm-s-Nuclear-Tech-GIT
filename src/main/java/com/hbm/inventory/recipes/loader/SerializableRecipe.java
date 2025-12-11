@@ -16,6 +16,7 @@ import com.google.gson.stream.JsonWriter;
 import com.hbm.inventory.FluidStack;
 import com.hbm.inventory.RecipesCommon.AStack;
 import com.hbm.inventory.RecipesCommon.ComparableStack;
+import com.hbm.inventory.RecipesCommon.NBTStack;
 import com.hbm.inventory.RecipesCommon.OreDictStack;
 import com.hbm.inventory.fluid.FluidType;
 import com.hbm.inventory.fluid.Fluids;
@@ -29,15 +30,18 @@ import com.hbm.util.Tuple.Pair;
 import api.hbm.recipe.IRecipeRegisterListener;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.JsonToNBT;
+import net.minecraft.nbt.NBTBase;
+import net.minecraft.nbt.NBTTagCompound;
 
 //the anti-spaghetti. this class provides so much functionality and saves so much time, i just love you, SerializableRecipe <3
 public abstract class SerializableRecipe {
 
 	public static final Gson gson = new Gson();
-	public static List<SerializableRecipe> recipeHandlers = new ArrayList<>();
-	public static List<IRecipeRegisterListener> additionalListeners = new ArrayList<>();
+	public static List<SerializableRecipe> recipeHandlers = new ArrayList();
+	public static List<IRecipeRegisterListener> additionalListeners = new ArrayList();
 
-	public static Map<String, InputStream> recipeSyncHandlers = new HashMap<>();
+	public static Map<String, InputStream> recipeSyncHandlers = new HashMap();
 
 	public boolean modified = false;
 
@@ -69,6 +73,7 @@ public abstract class SerializableRecipe {
 		recipeHandlers.add(new FuelPoolRecipes());
 		recipeHandlers.add(new MixerRecipes());
 		recipeHandlers.add(new OutgasserRecipes());
+		recipeHandlers.add(new FluidBreederRecipes());
 		recipeHandlers.add(new CompressorRecipes());
 		recipeHandlers.add(new ElectrolyserFluidRecipes());
 		recipeHandlers.add(new ElectrolyserMetalRecipes());
@@ -81,9 +86,14 @@ public abstract class SerializableRecipe {
 		//AFTER Assembler
 		recipeHandlers.add(new AnvilRecipes());
 		recipeHandlers.add(new PedestalRecipes());
+		recipeHandlers.add(new AnnihilatorRecipes());
 		
 		//GENERIC
+		recipeHandlers.add(AssemblyMachineRecipes.INSTANCE);
 		recipeHandlers.add(ChemicalPlantRecipes.INSTANCE);
+		recipeHandlers.add(PUREXRecipes.INSTANCE);
+		recipeHandlers.add(FusionRecipes.INSTANCE);
+		recipeHandlers.add(PrecAssRecipes.INSTANCE);
 
 		recipeHandlers.add(new MatDistribution());
 		recipeHandlers.add(new CustomMachineRecipes());
@@ -105,6 +115,8 @@ public abstract class SerializableRecipe {
 
 		MainRegistry.logger.info("Starting recipe init!");
 
+		GenericRecipes.clearPools();
+		
 		for(SerializableRecipe recipe : recipeHandlers) {
 
 			recipe.deleteRecipes();
@@ -119,7 +131,7 @@ public abstract class SerializableRecipe {
 					Reader reader = new InputStreamReader(stream);
 					recipe.readRecipeStream(reader);
 					recipe.modified = true;
-				} catch(IOException ex) {
+				} catch(Throwable ex) {
 					MainRegistry.logger.error("Failed to reset synced recipe stream", ex);
 				}
 			} else if(recFile.exists() && recFile.isFile()) {
@@ -237,7 +249,7 @@ public abstract class SerializableRecipe {
 		JsonObject json = gson.fromJson(reader, JsonObject.class);
 		JsonArray recipes = json.get("recipes").getAsJsonArray();
 		for(JsonElement recipe : recipes) {
-			this.readRecipe(recipe);
+			if(recipe != null) this.readRecipe(recipe);
 		}
 	}
 
@@ -249,6 +261,12 @@ public abstract class SerializableRecipe {
 		try {
 			String type = array.get(0).getAsString();
 			int stacksize = array.size() > 2 ? array.get(2).getAsInt() : 1;
+			if("nbt".equals(type)) {
+				Item item = (Item) Item.itemRegistry.getObject(array.get(1).getAsString());
+				int meta = array.size() > 3 ? array.get(3).getAsInt() : 0;
+				NBTBase nbt = JsonToNBT.func_150315_a(array.get(array.size() - 1).getAsString());
+				return new NBTStack(item, stacksize, meta).withNBT(nbt instanceof NBTTagCompound ? (NBTTagCompound) nbt : null);
+			}
 			if("item".equals(type)) {
 				Item item = (Item) Item.itemRegistry.getObject(array.get(1).getAsString());
 				int meta = array.size() > 3 ? array.get(3).getAsInt() : 0;
@@ -276,18 +294,24 @@ public abstract class SerializableRecipe {
 	public static void writeAStack(AStack astack, JsonWriter writer) throws IOException {
 		writer.beginArray();
 		writer.setIndent("");
-		if(astack instanceof ComparableStack) {
+		if(astack instanceof NBTStack) {
+			NBTStack comp = (NBTStack) astack;
+			writer.value(comp.nbt != null ? "nbt" : "item");							//NBT  identifier
+			writer.value(Item.itemRegistry.getNameForObject(comp.toStack().getItem()));	//item name
+			if(comp.stacksize != 1 || comp.meta > 0) writer.value(comp.stacksize);		//stack size
+			if(comp.meta > 0) writer.value(comp.meta);									//metadata
+			if(comp.nbt != null) writer.value(comp.nbt.toString());						//NBT
+		} else if(astack instanceof ComparableStack) {
 			ComparableStack comp = (ComparableStack) astack;
 			writer.value("item");														//ITEM  identifier
 			writer.value(Item.itemRegistry.getNameForObject(comp.toStack().getItem()));	//item name
-			if(comp.stacksize != 1 || comp.meta > 0) writer.value(comp.stacksize);						//stack size
+			if(comp.stacksize != 1 || comp.meta > 0) writer.value(comp.stacksize);		//stack size
 			if(comp.meta > 0) writer.value(comp.meta);									//metadata
-		}
-		if(astack instanceof OreDictStack) {
+		} else if(astack instanceof OreDictStack) {
 			OreDictStack ore = (OreDictStack) astack;
-			writer.value("dict");			//DICT identifier
-			writer.value(ore.name);			//dict name
-			if(ore.stacksize != 1) writer.value(ore.stacksize);	//stacksize
+			writer.value("dict");														//DICT identifier
+			writer.value(ore.name);														//dict name
+			if(ore.stacksize != 1) writer.value(ore.stacksize);							//stacksize
 		}
 		writer.endArray();
 		writer.setIndent("  ");

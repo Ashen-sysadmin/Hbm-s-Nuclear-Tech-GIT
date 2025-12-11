@@ -3,6 +3,7 @@ package com.hbm.main;
 import com.hbm.blocks.ILookOverlay;
 import com.hbm.blocks.ModBlocks;
 import com.hbm.blocks.generic.BlockAshes;
+import com.hbm.blocks.generic.BlockRebar;
 import com.hbm.config.ClientConfig;
 import com.hbm.config.GeneralConfig;
 import com.hbm.entity.mob.EntityHunterChopper;
@@ -23,6 +24,7 @@ import com.hbm.inventory.RecipesCommon.ComparableStack;
 import com.hbm.inventory.gui.GUIArmorTable;
 import com.hbm.inventory.gui.GUIScreenPreview;
 import com.hbm.inventory.gui.GUIScreenWikiRender;
+import com.hbm.inventory.gui.LoadingScreenRendererNT;
 import com.hbm.items.ItemCustomLore;
 import com.hbm.items.ModItems;
 import com.hbm.items.armor.*;
@@ -35,6 +37,9 @@ import com.hbm.lib.Library;
 import com.hbm.lib.RefStrings;
 import com.hbm.packet.PacketDispatcher;
 import com.hbm.packet.toserver.AuxButtonPacket;
+import com.hbm.qmaw.GuiQMAW;
+import com.hbm.qmaw.QMAWLoader;
+import com.hbm.qmaw.QuickManualAndWiki;
 import com.hbm.render.anim.HbmAnimations;
 import com.hbm.render.anim.HbmAnimations.Animation;
 import com.hbm.render.block.ct.CTStitchReceiver;
@@ -65,7 +70,6 @@ import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
-import cpw.mods.fml.common.gameevent.InputEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import cpw.mods.fml.common.gameevent.TickEvent.ClientTickEvent;
 import cpw.mods.fml.common.gameevent.TickEvent.Phase;
@@ -86,7 +90,6 @@ import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.entity.RenderPlayer;
 import net.minecraft.client.settings.GameSettings;
-import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.init.Blocks;
@@ -111,6 +114,8 @@ import net.minecraftforge.client.event.RenderGameOverlayEvent.ElementType;
 import net.minecraftforge.client.event.sound.PlaySoundEvent17;
 import net.minecraftforge.common.ForgeHooks;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
+import net.minecraftforge.oredict.OreDictionary;
+
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
@@ -738,9 +743,23 @@ public class ModEventHandlerClient {
 		}
 
 		try {
+			QuickManualAndWiki qmaw = QMAWLoader.triggers.get(comp);
+			if(qmaw == null) {
+				qmaw = QMAWLoader.triggers.get(new ComparableStack(comp.item, 1, OreDictionary.WILDCARD_VALUE));
+			}
+			if(qmaw != null) {
+				list.add(EnumChatFormatting.YELLOW + I18nUtil.resolveKey("qmaw.tab", Keyboard.getKeyName(HbmKeybinds.qmaw.getKeyCode())));
+				lastQMAW = qmaw;
+				qmawTimestamp = Clock.get_ms();
+			}
+		} catch(Exception ex) {
+			list.add(EnumChatFormatting.RED + "Error loading cannery: " + ex.getLocalizedMessage());
+		}
+
+		try {
 			CanneryBase cannery = Jars.canneries.get(comp);
 			if(cannery != null) {
-				list.add(EnumChatFormatting.GREEN + I18nUtil.resolveKey("cannery.f1"));
+				list.add(EnumChatFormatting.GREEN + I18nUtil.resolveKey("cannery.f1", Keyboard.getKeyName(Keyboard.KEY_LSHIFT) + " + " + Keyboard.getKeyName(HbmKeybinds.qmaw.getKeyCode())));
 				lastCannery = comp;
 				canneryTimestamp = Clock.get_ms();
 			}
@@ -760,6 +779,8 @@ public class ModEventHandlerClient {
 
 	private static long canneryTimestamp;
 	private static ComparableStack lastCannery = null;
+	private static long qmawTimestamp;
+	private static QuickManualAndWiki lastQMAW = null;
 
 	private ResourceLocation ashes = new ResourceLocation(RefStrings.MODID + ":textures/misc/overlay_ash.png");
 
@@ -874,7 +895,7 @@ public class ModEventHandlerClient {
 			}
 		}
 
-		if(Keyboard.isKeyDown(Keyboard.KEY_F1) && Minecraft.getMinecraft().currentScreen != null) {
+		if(Keyboard.isKeyDown(HbmKeybinds.qmaw.getKeyCode()) && Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) && Minecraft.getMinecraft().currentScreen != null) {
 
 			ComparableStack comp = canneryTimestamp > Clock.get_ms() - 100 ? lastCannery : null;
 
@@ -889,6 +910,16 @@ public class ModEventHandlerClient {
 					Minecraft.getMinecraft().thePlayer.closeScreen();
 					FMLCommonHandler.instance().showGuiScreen(new GuiWorldInAJar(cannery.createScript(), cannery.getName(), cannery.getIcon(), cannery.seeAlso()));
 				}
+			}
+		}
+
+		if(Keyboard.isKeyDown(HbmKeybinds.qmaw.getKeyCode()) && !Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) && Minecraft.getMinecraft().currentScreen != null) {
+
+			QuickManualAndWiki qmaw = qmawTimestamp > Clock.get_ms() - 100 ? lastQMAW : null;
+
+			if(qmaw != null) {
+				Minecraft.getMinecraft().thePlayer.closeScreen();
+				FMLCommonHandler.instance().showGuiScreen(new GuiQMAW(qmaw));
 			}
 		}
 
@@ -926,15 +957,18 @@ public class ModEventHandlerClient {
 				);
 				
 				String prefix = "Gun ";
-				int scale = 8;
+				//int gunScale = 16;
+				//int defaultScale = 1;
+				int slotScale = 16;
 				boolean ignoreNonNTM = true;
+				boolean onlyGuns = true;
 
 				List<ItemStack> stacks = new ArrayList<ItemStack>();
 				for (Object reg : Item.itemRegistry) {
 					Item item = (Item) reg;
 					if(ignoreNonNTM && !Item.itemRegistry.getNameForObject(item).startsWith("hbm:")) continue;
 					if(ignoredItems.contains(item)) continue;
-					if(!(item instanceof ItemGunBaseNT) && prefix.toLowerCase(Locale.US).startsWith("gun")) continue;
+					if(onlyGuns && !(item instanceof ItemGunBaseNT)) continue;
 					if(collapsedClasses.contains(item.getClass())) {
 						stacks.add(new ItemStack(item));
 					} else {
@@ -943,7 +977,7 @@ public class ModEventHandlerClient {
 				}
 
 				Minecraft.getMinecraft().thePlayer.closeScreen();
-				FMLCommonHandler.instance().showGuiScreen(new GUIScreenWikiRender(stacks.toArray(new ItemStack[0]), prefix, "wiki-block-renders-256", scale));
+				FMLCommonHandler.instance().showGuiScreen(new GUIScreenWikiRender(stacks.toArray(new ItemStack[0]), prefix, "wiki-block-renders-256", slotScale));
 			}
 		} else {
 			isRenderingItems = false;
@@ -1029,14 +1063,26 @@ public class ModEventHandlerClient {
 
 	public static boolean renderLodeStar = false;
 	public static long lastStarCheck = 0L;
+	public static long lastLoadScreenReplacement = 0L;
+	public static int loadingScreenReplacementRetry = 0;
 
 	@SideOnly(Side.CLIENT)
 	@SubscribeEvent(priority = EventPriority.LOWEST)
 	public void onClientTickLast(ClientTickEvent event) {
+		
+		Minecraft mc = Minecraft.getMinecraft();
+		long millis = Clock.get_ms();
+		if(millis == 0) millis = System.currentTimeMillis();
+		
+		if(GeneralConfig.enableLoadScreenReplacement && loadingScreenReplacementRetry < 25 && !(mc.loadingScreen instanceof LoadingScreenRendererNT) && millis > lastLoadScreenReplacement + 5_000) {
+			mc.loadingScreen = new LoadingScreenRendererNT(mc);
+			lastLoadScreenReplacement = millis;
+			loadingScreenReplacementRetry++; // this might not do anything, but at least it should prevent a metric fuckton of framebuffers from being created
+		}
 
 		if(event.phase == Phase.START && GeneralConfig.enableSkyboxes) {
 
-			World world = Minecraft.getMinecraft().theWorld;
+			World world = mc.theWorld;
 			if(world == null) return;
 
 			IRenderHandler sky = world.provider.getSkyRenderer();
@@ -1060,8 +1106,7 @@ public class ModEventHandlerClient {
 				}
 			}
 
-			EntityPlayer player = Minecraft.getMinecraft().thePlayer;
-			long millis = Clock.get_ms();
+			EntityPlayer player = mc.thePlayer;
 
 			if(lastStarCheck + 200 < millis) {
 				renderLodeStar = false;
@@ -1122,77 +1167,12 @@ public class ModEventHandlerClient {
 	}
 
 	@SideOnly(Side.CLIENT)
-	@SubscribeEvent(priority = EventPriority.LOW)
-	public void onMouseClicked(InputEvent.MouseInputEvent event) {
-
-		Minecraft mc = Minecraft.getMinecraft();
-		if(GeneralConfig.enableKeybindOverlap && (mc.currentScreen == null || mc.currentScreen.allowUserInput)) {
-			boolean state = Mouse.getEventButtonState();
-			int keyCode = Mouse.getEventButton() - 100;
-
-			//if anything errors here, run ./gradlew clean setupDecompWorkSpace
-			for(Object o : KeyBinding.keybindArray) {
-				KeyBinding key = (KeyBinding) o;
-
-				if(key.getKeyCode() == keyCode && KeyBinding.hash.lookup(key.getKeyCode()) != key) {
-
-					key.pressed = state;
-					if(state && key.pressTime == 0) {
-						key.pressTime = 1;
-					}
-				}
-			}
-
-			boolean gunKey = keyCode == HbmKeybinds.gunPrimaryKey.getKeyCode() || keyCode == HbmKeybinds.gunSecondaryKey.getKeyCode() ||
-					keyCode == HbmKeybinds.gunTertiaryKey.getKeyCode() || keyCode == HbmKeybinds.reloadKey.getKeyCode();
-
-			EntityPlayer player = mc.thePlayer;
-
-			if(player.getHeldItem() != null && player.getHeldItem().getItem() instanceof ItemGunBaseNT) {
-
-				/* Shoot in favor of attacking */
-				if(gunKey && keyCode == mc.gameSettings.keyBindAttack.getKeyCode()) {
-					mc.gameSettings.keyBindAttack.pressed = false;
-					mc.gameSettings.keyBindAttack.pressTime = 0;
-				}
-
-				if(gunKey && keyCode == mc.gameSettings.keyBindPickBlock.getKeyCode()) {
-					mc.gameSettings.keyBindPickBlock.pressed = false;
-					mc.gameSettings.keyBindPickBlock.pressTime = 0;
-				}
-			}
-		}
-	}
-
-	@SideOnly(Side.CLIENT)
-	@SubscribeEvent(priority = EventPriority.LOW)
-	public void onKeyTyped(InputEvent.KeyInputEvent event) {
-
-		Minecraft mc = Minecraft.getMinecraft();
-		if(GeneralConfig.enableKeybindOverlap && (mc.currentScreen == null || mc.currentScreen.allowUserInput)) {
-			boolean state = Keyboard.getEventKeyState();
-			int keyCode = Keyboard.getEventKey();
-
-			//if anything errors here, run ./gradlew clean setupDecompWorkSpace
-			for(Object o : KeyBinding.keybindArray) {
-				KeyBinding key = (KeyBinding) o;
-
-				if(keyCode != 0 && key.getKeyCode() == keyCode && KeyBinding.hash.lookup(key.getKeyCode()) != key) {
-
-					key.pressed = state;
-					if(state && key.pressTime == 0) {
-						key.pressTime = 1;
-					}
-				}
-			}
-		}
-	}
-
-	@SideOnly(Side.CLIENT)
 	@SubscribeEvent
 	public void onRenderWorldLastEvent(RenderWorldLastEvent event) {
 
 		Clock.update();
+		
+		BlockRebar.renderRebar(Minecraft.getMinecraft().theWorld.loadedTileEntityList, event.partialTicks);
 
 		GL11.glPushMatrix();
 
@@ -1436,11 +1416,11 @@ public class ModEventHandlerClient {
 			case 10: main.splashText = "Fentanyl!"; break;
 			case 11: main.splashText = "Do drugs!"; break;
 			case 12: main.splashText = "Imagine being scared by splash texts!"; break;
+			case 13: main.splashText = "Semantic versioning? More like pedantic versioning."; break;
 			}
 
 			double d = Math.random();
 			if(d < 0.1) main.splashText = "Redditors aren't people!";
-			else if(d < 0.2) main.splashText = "Can someone tell me what corrosive fumes the people on Reddit are huffing so I can avoid those more effectively?";
 		}
 	}
 }
